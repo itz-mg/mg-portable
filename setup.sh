@@ -36,13 +36,13 @@ sudo systemctl stop dnsmasq
 sudo bash -c 'cat > /etc/hostapd/hostapd.conf <<EOF
 interface=wlan0
 driver=nl80211
-ssid=MG Servers
+ssid=MG-Servers
 hw_mode=g
 channel=6
 wmm_enabled=1
 auth_algs=1
 wpa=2
-wpa_passphrase=MGServers123
+wpa_passphrase=manolisgserver123
 wpa_key_mgmt=WPA-PSK
 rsn_pairwise=CCMP
 EOF'
