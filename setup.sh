@@ -5,6 +5,7 @@
 echo "🚀 Starting MG Servers Full Installation..."
 
 # 1️⃣ Update & upgrade
+echo "🔄 Updating system..."
 sudo apt update -y
 sudo apt upgrade -y
 
@@ -19,7 +20,7 @@ sudo mkdir -p /mgservers/backups/android
 sudo mkdir -p /mgservers/backups/iphone
 sudo mkdir -p /mgservers/private
 sudo chmod -R 775 /mgservers
-sudo chown -R pi:pi /mgservers
+sudo chown -R mg:mg /mgservers
 
 # 4️⃣ Performance tweaks
 echo "⚡ Optimizing system performance..."
@@ -32,7 +33,7 @@ echo "📡 Configuring Hotspot..."
 sudo systemctl stop hostapd
 sudo systemctl stop dnsmasq
 
-# Hostapd config
+# Hostapd configuration
 sudo bash -c 'cat > /etc/hostapd/hostapd.conf <<EOF
 interface=wlan0
 driver=nl80211
@@ -49,14 +50,14 @@ EOF'
 
 sudo sed -i 's|#DAEMON_CONF=""|DAEMON_CONF="/etc/hostapd/hostapd.conf"|' /etc/default/hostapd
 
-# Dnsmasq config
+# Dnsmasq configuration
 sudo mv /etc/dnsmasq.conf /etc/dnsmasq.conf.orig
 sudo bash -c 'cat > /etc/dnsmasq.conf <<EOF
 interface=wlan0
 dhcp-range=192.168.4.10,192.168.4.100,255.255.255.0,24h
 EOF'
 
-# dhcpcd static IP
+# dhcpcd static IP configuration
 sudo sed -i '/interface wlan0/,$d' /etc/dhcpcd.conf
 sudo bash -c 'cat >> /etc/dhcpcd.conf <<EOF
 
@@ -73,7 +74,7 @@ sudo bash -c 'cat >> /etc/samba/smb.conf <<EOF
 path = /mgservers/shared
 browseable = yes
 writeable = yes
-valid users = pi
+valid users = mg
 create mask = 0775
 directory mask = 0775
 socket options = TCP_NODELAY SO_RCVBUF=65536 SO_SNDBUF=65536
@@ -82,17 +83,17 @@ socket options = TCP_NODELAY SO_RCVBUF=65536 SO_SNDBUF=65536
 path = /mgservers/backups
 browseable = yes
 writeable = yes
-valid users = pi
+valid users = mg
 
 [Private]
 path = /mgservers/private
 browseable = no
 writeable = yes
-valid users = pi
+valid users = mg
 EOF'
 
-echo "👉 Set your Samba password (remember this!)"
-sudo smbpasswd -a pi
+echo "👉 Set your Samba password for mg (remember this!)"
+sudo smbpasswd -a mg
 sudo systemctl restart smbd
 
 # 7️⃣ Enable all services
@@ -113,7 +114,7 @@ echo ""
 echo "✅ MG Servers Installation Complete!"
 echo ""
 echo "After reboot:"
-echo "1️⃣ Connect to WiFi: MG Servers"
+echo "1️⃣ Connect to WiFi: MG-Servers"
 echo "2️⃣ SMB address: smb://192.168.4.1 or smb://mgservers.local"
 echo "3️⃣ Android: use FolderSync / Solid Explorer"
 echo "4️⃣ iPhone: use Files app or PhotoSync"
