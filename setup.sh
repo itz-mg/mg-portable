@@ -93,7 +93,7 @@ valid users = mg
 EOF'
 
 echo "👉 Set your Samba password for mg (remember this!)"
-sudo smbpasswd -a mg
+echo -e "mgserver123\nmgserver123" | sudo smbpasswd -a mg
 sudo systemctl restart smbd
 
 # 7️⃣ Enable all services
