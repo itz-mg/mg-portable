@@ -1,12 +1,14 @@
 #!/bin/bash
 # mg-travel-server-v4.sh - MG Servers Travel Security Dashboard
-# For Raspberry Pi OS Lite 64-bit
+# For Raspberry Pi OS Lite 64-bit – tailored for user 'mg', hostname 'mgtravel'
 
 set -e
 
 APP_DIR="/opt/mg-travel-dashboard"
 LOG_DIR="/var/log/mg-travel"
 SERVICE_NAME="mg-travel-dashboard"
+USERNAME="mg"
+HOSTNAME="mgtravel"
 
 echo "[*] Updating system..."
 apt update && apt upgrade -y
@@ -15,7 +17,7 @@ apt install -y python3 python3-pip python3-venv git iw wireless-tools nginx
 # Create directories
 mkdir -p $APP_DIR
 mkdir -p $LOG_DIR
-chown pi:pi $LOG_DIR
+chown $USERNAME:$USERNAME $LOG_DIR
 
 # Python virtual environment
 cd $APP_DIR
@@ -24,9 +26,9 @@ source venv/bin/activate
 pip install --upgrade pip
 pip install flask flask-socketio flask-limiter flask-login python-dotenv psutil netifaces speedtest-cli tailscale
 
-# Self-signed SSL cert
+# Self-signed SSL cert (uses hostname)
 mkdir -p $APP_DIR/certs
-openssl req -x509 -newkey rsa:4096 -keyout $APP_DIR/certs/key.pem -out $APP_DIR/certs/cert.pem -days 365 -nodes -subj "/CN=mg-travel.local"
+openssl req -x509 -newkey rsa:4096 -keyout $APP_DIR/certs/key.pem -out $APP_DIR/certs/cert.pem -days 365 -nodes -subj "/CN=${HOSTNAME}.local"
 
 # Configuration
 cat > $APP_DIR/config.py << 'EOF'
@@ -65,7 +67,7 @@ class Config:
     }
 EOF
 
-# Main Flask app
+# Flask app (same as before – unchanged)
 cat > $APP_DIR/app.py << 'EOF_PY'
 #!/usr/bin/env python3
 import os
@@ -434,7 +436,6 @@ EOF_PY
 
 # ---------- Frontend (Templates) ----------
 mkdir -p $APP_DIR/templates
-mkdir -p $APP_DIR/static
 
 # login.html (minimal)
 cat > $APP_DIR/templates/login.html << 'EOF_LOGIN'
@@ -471,7 +472,7 @@ cat > $APP_DIR/templates/login.html << 'EOF_LOGIN'
 </html>
 EOF_LOGIN
 
-# index.html - main dashboard (slick, modern, mobile-friendly)
+# index.html (main dashboard)
 cat > $APP_DIR/templates/index.html << 'EOF_HTML'
 <!DOCTYPE html>
 <html lang="en">
@@ -988,7 +989,7 @@ After=network.target tailscaled.service
 
 [Service]
 Type=simple
-User=pi
+User=$USERNAME
 WorkingDirectory=$APP_DIR
 ExecStart=$APP_DIR/venv/bin/python $APP_DIR/app.py
 Restart=always
@@ -1003,14 +1004,18 @@ ufw allow 8443/tcp comment 'MG Travel Dashboard'
 ufw allow ssh
 ufw --force enable
 
+# Set ownership of app directory to mg
+chown -R $USERNAME:$USERNAME $APP_DIR
+
 systemctl daemon-reload
 systemctl enable $SERVICE_NAME
 systemctl start $SERVICE_NAME
 
 echo ""
 echo "✅ MG Travel Security Dashboard installed!"
-echo "   Access it at https://$(hostname -I | awk '{print $1}'):8443"
+echo "   Access it at:"
+echo "   - https://$(hostname -I | awk '{print $1}'):8443"
+echo "   - https://${HOSTNAME}.local:8443  (if mDNS is working)"
 echo "   Default login: admin / changeme"
 echo ""
 echo "📘 For hotel WiFi setup, see the guide below."
-EOF
