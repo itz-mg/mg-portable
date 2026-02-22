@@ -1,8 +1,8 @@
 #!/bin/bash
-# mg-travel-server-v4.sh - MG Servers Travel Security Dashboard
-# For Raspberry Pi OS Lite 64-bit – tailored for user 'mg', hostname 'mgtravel'
+# mg-travel-server-v4.sh - MG Servers Travel Security Dashboard (fixed)
+# For Raspberry Pi OS Lite 64-bit – user 'mg', hostname 'mgtravel'
 
-set -e
+set -e  # Exit on error
 
 APP_DIR="/opt/mg-travel-dashboard"
 LOG_DIR="/var/log/mg-travel"
@@ -12,7 +12,10 @@ HOSTNAME="mgtravel"
 
 echo "[*] Updating system..."
 apt update && apt upgrade -y
-apt install -y python3 python3-pip python3-venv git iw wireless-tools nginx
+
+# Install required packages (including ufw if missing)
+echo "[*] Installing dependencies..."
+apt install -y python3 python3-pip python3-venv git iw wireless-tools nginx ufw
 
 # Create directories
 mkdir -p $APP_DIR
@@ -67,7 +70,7 @@ class Config:
     }
 EOF
 
-# Flask app (same as before – unchanged)
+# Flask app (same as before – included for completeness)
 cat > $APP_DIR/app.py << 'EOF_PY'
 #!/usr/bin/env python3
 import os
@@ -242,7 +245,7 @@ def system_info():
     services = {
         'ssh': get_service_status('ssh'),
         'fail2ban': get_service_status('fail2ban'),
-        'ufw': run_cmd("ufw status | grep -q 'Status: active'")[2] == 0,
+        'ufw': run_cmd("ufw status | grep -q 'Status: active'")[2] == 0 if os.path.exists('/usr/sbin/ufw') else False,
         'watchdog': get_service_status('watchdog')
     }
     return jsonify({
@@ -331,6 +334,8 @@ def service_control(name, action):
     if action not in ['start', 'stop', 'restart', 'status', 'enable', 'disable']:
         return jsonify({'error': 'Invalid action'}), 400
     if name == 'ufw':
+        if not os.path.exists('/usr/sbin/ufw'):
+            return jsonify({'error': 'UFW is not installed'}), 400
         if action == 'status':
             cmd = "ufw status"
         else:
@@ -437,7 +442,7 @@ EOF_PY
 # ---------- Frontend (Templates) ----------
 mkdir -p $APP_DIR/templates
 
-# login.html (minimal)
+# login.html
 cat > $APP_DIR/templates/login.html << 'EOF_LOGIN'
 <!DOCTYPE html>
 <html lang="en">
@@ -485,9 +490,7 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
     <script src="https://cdn.socket.io/4.5.4/socket.io.min.js"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
     <style>
-        /* Smooth theme transition */
         * { transition: background-color 0.2s ease, border-color 0.2s ease; }
-        /* Custom scrollbar */
         ::-webkit-scrollbar { width: 8px; }
         ::-webkit-scrollbar-track { background: #1e293b; }
         ::-webkit-scrollbar-thumb { background: #475569; border-radius: 4px; }
@@ -496,7 +499,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
     </style>
 </head>
 <body class="bg-slate-100 dark:bg-slate-900 text-slate-900 dark:text-slate-100 font-sans antialiased">
-    <!-- Top Navigation -->
     <nav class="bg-white/70 dark:bg-slate-800/70 backdrop-blur-md shadow-sm sticky top-0 z-50 border-b border-slate-200 dark:border-slate-700">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
@@ -558,7 +560,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
 
         <!-- Resource Usage + Services -->
         <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            <!-- CPU/Memory/Disk -->
             <div class="lg:col-span-2 bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-slate-200 dark:border-slate-700">
                 <h3 class="text-lg font-semibold mb-4">System Resources</h3>
                 <div class="space-y-4">
@@ -576,7 +577,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
                     </div>
                 </div>
             </div>
-            <!-- Services Status -->
             <div class="bg-white/80 dark:bg-slate-800/80 backdrop-blur-sm rounded-2xl shadow-lg p-5 border border-slate-200 dark:border-slate-700">
                 <h3 class="text-lg font-semibold mb-4">Services</h3>
                 <div class="space-y-3">
@@ -700,14 +700,12 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
         </div>
     </main>
 
-    <!-- Toast container -->
     <div id="toast-container" class="fixed bottom-4 right-4 z-50 space-y-2"></div>
 
     <script>
         const socket = io();
         let bandwidthChart;
 
-        // Theme toggle
         const themeToggle = document.getElementById('theme-toggle');
         if (localStorage.theme === 'dark' || (!('theme' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches)) {
             document.documentElement.classList.add('dark');
@@ -719,7 +717,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             localStorage.theme = document.documentElement.classList.contains('dark') ? 'dark' : 'light';
         });
 
-        // Toast function
         function showToast(message, type = 'info') {
             const toast = document.createElement('div');
             toast.className = `px-4 py-3 rounded-lg shadow-lg text-white ${type === 'error' ? 'bg-red-600' : type === 'success' ? 'bg-green-600' : 'bg-blue-600'} transition-opacity duration-300`;
@@ -728,7 +725,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             setTimeout(() => toast.remove(), 5000);
         }
 
-        // Fetch system info
         async function fetchSystemInfo() {
             try {
                 const res = await fetch('/api/system-info');
@@ -761,7 +757,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             }
         }
 
-        // Bandwidth chart
         async function fetchBandwidth() {
             try {
                 const res = await fetch('/api/bandwidth?hours=24');
@@ -793,7 +788,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             }
         }
 
-        // Anomalies
         async function fetchAnomalies() {
             try {
                 const res = await fetch('/api/anomalies?limit=10');
@@ -815,7 +809,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             }
         }
 
-        // WiFi
         async function fetchWiFi() {
             try {
                 const res = await fetch('/api/wifi/networks');
@@ -861,7 +854,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             }
         });
 
-        // Tailscale
         async function fetchTailscale() {
             try {
                 const res = await fetch('/api/tailscale/devices');
@@ -901,7 +893,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             fetchTailscale();
         }
 
-        // Service control
         async function controlService(service, action) {
             try {
                 const res = await fetch(`/api/services/${service}/${action}`, {method: 'POST'});
@@ -917,7 +908,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             }
         }
 
-        // Power actions
         async function powerAction(action) {
             if (!confirm(`Are you sure you want to ${action}?`)) return;
             try {
@@ -928,7 +918,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             }
         }
 
-        // Logs
         async function fetchLogs() {
             const service = document.getElementById('log-service').value;
             try {
@@ -955,7 +944,6 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
                 .catch(() => showToast('Export failed', 'error'));
         }
 
-        // WebSocket listeners
         socket.on('anomaly', (data) => {
             const alertBox = document.getElementById('live-alerts');
             const newAlert = document.createElement('div');
@@ -965,14 +953,12 @@ cat > $APP_DIR/templates/index.html << 'EOF_HTML'
             if (alertBox.children.length > 10) alertBox.removeChild(alertBox.lastChild);
         });
 
-        // Initial loads
         fetchSystemInfo();
         fetchBandwidth();
         fetchAnomalies();
         fetchWiFi();
         fetchTailscale();
 
-        // Periodic refresh
         setInterval(fetchSystemInfo, 30000);
         setInterval(fetchAnomalies, 10000);
         setInterval(fetchWiFi, 60000);
@@ -999,10 +985,16 @@ RestartSec=10
 WantedBy=multi-user.target
 EOF_SERVICE
 
-# ---------- Firewall ----------
-ufw allow 8443/tcp comment 'MG Travel Dashboard'
-ufw allow ssh
-ufw --force enable
+# ---------- Firewall (only if ufw is available) ----------
+if command -v ufw >/dev/null 2>&1; then
+    echo "[*] Configuring UFW firewall..."
+    ufw allow 8443/tcp comment 'MG Travel Dashboard'
+    ufw allow ssh
+    ufw --force enable
+else
+    echo "[!] UFW not found – skipping firewall configuration."
+    echo "    You may need to manually open port 8443 if using another firewall."
+fi
 
 # Set ownership of app directory to mg
 chown -R $USERNAME:$USERNAME $APP_DIR
