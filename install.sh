@@ -253,10 +253,9 @@ if __name__ == '__main__':
     socketio.run(app, host='127.0.0.1', port=5000)
 PYEOF
 
-    # ── device_manager.py ─────────────────────────────────────────────────────
+    # ── device_manager.py (UPDATED with better USB detection) ─────────────────
     cat > "${APP_DIR}/device_manager.py" << 'PYEOF'
 import os
-import re
 import subprocess
 import json
 
@@ -265,13 +264,22 @@ class DeviceManager:
     def list_sd_devices(self):
         devices = []
         try:
+            # Include TRAN (transport) to detect USB devices
             result = subprocess.run(
-                ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,LABEL,MODEL,HOTPLUG,RM'],
+                ['lsblk', '-J', '-o', 'NAME,SIZE,TYPE,MOUNTPOINT,LABEL,MODEL,HOTPLUG,RM,TRAN'],
                 capture_output=True, text=True, timeout=10
             )
             data = json.loads(result.stdout)
             for dev in data.get('blockdevices', []):
-                if dev.get('type') == 'disk' and (dev.get('hotplug') == '1' or dev.get('rm') == '1'):
+                # Consider a device as "removable" if:
+                # - it's a disk, and
+                # - either hotplug or rm is 1, OR its transport is 'usb'
+                if dev.get('type') != 'disk':
+                    continue
+                hotplug = dev.get('hotplug') == '1'
+                rm = dev.get('rm') == '1'
+                usb = dev.get('TRAN') == 'usb'
+                if hotplug or rm or usb:
                     entry = {
                         'device': f"/dev/{dev['name']}",
                         'name': dev.get('name'),
@@ -291,7 +299,8 @@ class DeviceManager:
                         if child.get('mountpoint'):
                             entry['mountpoint'] = child['mountpoint']
                     devices.append(entry)
-        except Exception:
+        except Exception as e:
+            # In case of error, return empty list
             pass
         return devices
 
