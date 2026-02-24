@@ -2061,10 +2061,7 @@ finalize_permissions() {
         find "${APP_DIR}/${d}" -type f -exec chmod 640 {} \; 2>/dev/null || true
     done
 
-    # ── venv: 755 on directories and executables so mgtravel user can reach them
-    # We use 755 (world-readable/executable) on the venv — the venv contains
-    # no secrets, only installed packages. This is the standard approach and
-    # avoids all group-membership / shebang-resolution permission issues.
+    # ── venv: make it world‑readable/executable so mgtravel can run it
     chown -R "root:root" "${APP_DIR}/venv"
     find "${APP_DIR}/venv" -type d -exec chmod 755 {} \;
     find "${APP_DIR}/venv" -type f -exec chmod 644 {} \;
@@ -2089,6 +2086,18 @@ finalize_permissions() {
         echo "$sudoers_line" > "$sudoers_file"
         chmod 440 "$sudoers_file"
         ok "Sudoers entry created for mgtravel mount/umount/shutdown."
+    fi
+
+    # ─── Allow nginx to access static files (add www-data to mgtravel group) ───
+    if id www-data &>/dev/null; then
+        if ! groups www-data | grep -q "\b${APP_USER}\b"; then
+            usermod -a -G "$APP_USER" www-data
+            ok "Added www-data to group $APP_USER (so nginx can read static files)."
+        else
+            ok "www-data already in group $APP_USER."
+        fi
+    else
+        warn "User www-data not found; nginx may not be installed correctly."
     fi
 
     # ── Verify python is executable by mgtravel ──────────────────────────────
