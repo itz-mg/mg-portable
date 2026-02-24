@@ -128,6 +128,11 @@ setup_python_env() {
 create_app_user() {
     if id "$APP_USER" &>/dev/null; then
         ok "System user '$APP_USER' already exists."
+        # Ensure user is in its own group (in case primary group differs)
+        if ! groups "$APP_USER" | grep -q "\b${APP_USER}\b"; then
+            usermod -a -G "$APP_USER" "$APP_USER"
+            ok "Added $APP_USER to group $APP_USER (supplementary)."
+        fi
     else
         useradd --system --no-create-home --shell /usr/sbin/nologin \
             --comment "MG Travel service account" "$APP_USER"
@@ -750,7 +755,7 @@ PYEOF
           <div class="health-icon health-icon-blue">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
               <rect x="4" y="4" width="16" height="16" rx="2"/>
-              <rect x="9" y="9" width="6" height="6"/>
+              <rect x="9" y="9" width="16" height="16"/>
               <line x1="9" y1="1" x2="9" y2="4"/>
               <line x1="15" y1="1" x2="15" y2="4"/>
               <line x1="9" y1="20" x2="9" y2="23"/>
@@ -2039,6 +2044,9 @@ AVAHIEOF
 finalize_permissions() {
     info "Finalising file permissions..."
 
+    # Stop the service if it's running – avoids interference
+    systemctl stop mgtravel.service 2>/dev/null || true
+
     # ── App dir ownership ────────────────────────────────────────────────────
     chown -R "root:${APP_USER}" "${APP_DIR}"
     chmod 750 "${APP_DIR}"
@@ -2081,6 +2089,16 @@ finalize_permissions() {
         echo "$sudoers_line" > "$sudoers_file"
         chmod 440 "$sudoers_file"
         ok "Sudoers entry created for mgtravel mount/umount/shutdown."
+    fi
+
+    # ── Verify python is executable by mgtravel ──────────────────────────────
+    if sudo -u "$APP_USER" test -x "${APP_DIR}/venv/bin/python3"; then
+        ok "Python binary is executable by $APP_USER."
+    else
+        warn "Python binary is NOT executable by $APP_USER. Aborting."
+        ls -la "${APP_DIR}/venv/bin/python3" >&2
+        echo "User $APP_USER groups: $(groups $APP_USER)" >&2
+        exit 1
     fi
 
     ok "Permissions finalised."
