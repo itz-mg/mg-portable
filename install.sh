@@ -1750,7 +1750,7 @@ Group=${APP_USER}
 WorkingDirectory=${APP_DIR}
 Environment=PYTHONUNBUFFERED=1
 Environment=FLASK_ENV=production
-ExecStart=${APP_DIR}/venv/bin/gunicorn \
+ExecStart=${APP_DIR}/venv/bin/python3 -m gunicorn \
     --worker-class eventlet \
     --workers 2 \
     --bind 127.0.0.1:${APP_PORT} \
@@ -2042,20 +2042,29 @@ finalize_permissions() {
     # ── App dir ownership ────────────────────────────────────────────────────
     chown -R "root:${APP_USER}" "${APP_DIR}"
     chmod 750 "${APP_DIR}"
+
+    # ── Source files ─────────────────────────────────────────────────────────
     for f in app.py backup_engine.py device_manager.py verifier.py; do
-        [[ -f "${APP_DIR}/${f}" ]] && chmod 640 "${APP_DIR}/${f}"
+        [[ -f "${APP_DIR}/${f}" ]] && chown "root:${APP_USER}" "${APP_DIR}/${f}" && chmod 640 "${APP_DIR}/${f}"
     done
     for d in templates static; do
+        [[ -d "${APP_DIR}/${d}" ]] && chown -R "root:${APP_USER}" "${APP_DIR}/${d}"
         find "${APP_DIR}/${d}" -type d -exec chmod 750 {} \; 2>/dev/null || true
         find "${APP_DIR}/${d}" -type f -exec chmod 640 {} \; 2>/dev/null || true
     done
 
-    # ── venv: g+rX preserves execute bits on binaries and .so files ──────────
-    # chmod g+rX: adds group-read everywhere + group-execute ONLY where
-    # owner-execute already exists — correct for venvs without nuking anything
-    chown -R "root:${APP_USER}" "${APP_DIR}/venv"
-    chmod -R o-rwx "${APP_DIR}/venv"
-    chmod -R g+rX  "${APP_DIR}/venv"
+    # ── venv: 755 on directories and executables so mgtravel user can reach them
+    # We use 755 (world-readable/executable) on the venv — the venv contains
+    # no secrets, only installed packages. This is the standard approach and
+    # avoids all group-membership / shebang-resolution permission issues.
+    chown -R "root:root" "${APP_DIR}/venv"
+    find "${APP_DIR}/venv" -type d -exec chmod 755 {} \;
+    find "${APP_DIR}/venv" -type f -exec chmod 644 {} \;
+    # Restore execute bits on all binaries and .so files
+    find "${APP_DIR}/venv/bin" -type f -exec chmod 755 {} \;
+    find "${APP_DIR}/venv/bin" -type l -exec chmod 755 {} \; 2>/dev/null || true
+    find "${APP_DIR}/venv" -name "*.so"   -exec chmod 755 {} \;
+    find "${APP_DIR}/venv" -name "*.so.*" -exec chmod 755 {} \;
     ok "venv permissions set."
 
     # ── Backups / logs ───────────────────────────────────────────────────────
