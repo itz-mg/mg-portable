@@ -1740,6 +1740,8 @@ Description=MG Travel — SD Backup Station (MG Servers)
 Documentation=https://mgservers.io
 After=network.target
 Wants=network.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
 
 [Service]
 Type=simple
@@ -1763,8 +1765,6 @@ ExecStart=${APP_DIR}/venv/bin/gunicorn \
 ExecReload=/bin/kill -s HUP \$MAINPID
 Restart=on-failure
 RestartSec=5
-StartLimitIntervalSec=60
-StartLimitBurst=5
 
 NoNewPrivileges=yes
 PrivateTmp=yes
@@ -1987,7 +1987,7 @@ optimize_services() {
         fi
     done
 
-    if ! grep -q "vm.swappiness" /etc/sysctl.conf; then
+    if ! grep -q "vm.swappiness" /etc/sysctl.conf 2>/dev/null; then
         echo "vm.swappiness=10" >> /etc/sysctl.conf
         sysctl -w vm.swappiness=10 2>/dev/null || true
     fi
@@ -2045,16 +2045,33 @@ AVAHIEOF
 finalize_permissions() {
     info "Finalising file permissions..."
 
-    find "${APP_DIR}" -type d -exec chmod 750 {} \;
-    find "${APP_DIR}" -type f -exec chmod 640 {} \;
-    chmod 750 "${APP_DIR}/venv/bin/"* 2>/dev/null || true
+    # ── App source dirs ──────────────────────────────────────────────────────
+    chmod 750 "${APP_DIR}"
+    for d in templates static logs backups; do
+        find "${APP_DIR}/${d}" -type d -exec chmod 750 {} \; 2>/dev/null || true
+        find "${APP_DIR}/${d}" -type f -exec chmod 640 {} \; 2>/dev/null || true
+    done
+    chmod 640 "${APP_DIR}/app.py"               "${APP_DIR}/backup_engine.py"               "${APP_DIR}/device_manager.py"               "${APP_DIR}/verifier.py" 2>/dev/null || true
 
+    # ── venv: own by root:APP_USER, never blanket 640 (breaks binaries) ─────
+    chown -R "root:${APP_USER}" "${APP_DIR}/venv"
+    find "${APP_DIR}/venv" -type d -exec chmod 750 {} \;
+    # Regular .py / config files: readable by group
+    find "${APP_DIR}/venv" -type f -exec chmod 640 {} \;
+    # Everything in bin/ must be executable (scripts + ELF binaries + symlinks)
+    find "${APP_DIR}/venv/bin" \( -type f -o -type l \) -exec chmod 750 {} \;
+    # Compiled extensions and shared libraries
+    find "${APP_DIR}/venv" \( -name "*.so" -o -name "*.so.*" \) -exec chmod 750 {} \;
+    ok "venv permissions set."
+
+    # ── Backups / logs ───────────────────────────────────────────────────────
     chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}/backups"
     chmod 750 "${APP_DIR}/backups"
 
     chown -R "${APP_USER}:adm" /var/log/mgtravel
     chmod 750 /var/log/mgtravel
 
+    # ── Sudoers ──────────────────────────────────────────────────────────────
     local sudoers_file="/etc/sudoers.d/mgtravel"
     local sudoers_line="${APP_USER} ALL=(root) NOPASSWD: /bin/mount, /bin/umount, /sbin/shutdown"
     if [[ ! -f "$sudoers_file" ]] || ! grep -qF "$sudoers_line" "$sudoers_file"; then
