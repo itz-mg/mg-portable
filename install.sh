@@ -1766,12 +1766,6 @@ ExecReload=/bin/kill -s HUP \$MAINPID
 Restart=on-failure
 RestartSec=5
 
-NoNewPrivileges=yes
-PrivateTmp=yes
-ProtectSystem=full
-ReadWritePaths=${APP_DIR}/backups ${APP_DIR}/logs /var/log/mgtravel /mnt
-CapabilityBoundingSet=CAP_DAC_READ_SEARCH CAP_SYS_ADMIN
-AmbientCapabilities=CAP_DAC_READ_SEARCH CAP_SYS_ADMIN
 
 StandardOutput=journal
 StandardError=journal
@@ -2045,29 +2039,29 @@ AVAHIEOF
 finalize_permissions() {
     info "Finalising file permissions..."
 
-    # ── App source dirs ──────────────────────────────────────────────────────
+    # ── App dir ownership ────────────────────────────────────────────────────
+    chown -R "root:${APP_USER}" "${APP_DIR}"
     chmod 750 "${APP_DIR}"
-    for d in templates static logs backups; do
+    for f in app.py backup_engine.py device_manager.py verifier.py; do
+        [[ -f "${APP_DIR}/${f}" ]] && chmod 640 "${APP_DIR}/${f}"
+    done
+    for d in templates static; do
         find "${APP_DIR}/${d}" -type d -exec chmod 750 {} \; 2>/dev/null || true
         find "${APP_DIR}/${d}" -type f -exec chmod 640 {} \; 2>/dev/null || true
     done
-    chmod 640 "${APP_DIR}/app.py"               "${APP_DIR}/backup_engine.py"               "${APP_DIR}/device_manager.py"               "${APP_DIR}/verifier.py" 2>/dev/null || true
 
-    # ── venv: own by root:APP_USER, never blanket 640 (breaks binaries) ─────
+    # ── venv: g+rX preserves execute bits on binaries and .so files ──────────
+    # chmod g+rX: adds group-read everywhere + group-execute ONLY where
+    # owner-execute already exists — correct for venvs without nuking anything
     chown -R "root:${APP_USER}" "${APP_DIR}/venv"
-    find "${APP_DIR}/venv" -type d -exec chmod 750 {} \;
-    # Regular .py / config files: readable by group
-    find "${APP_DIR}/venv" -type f -exec chmod 640 {} \;
-    # Everything in bin/ must be executable (scripts + ELF binaries + symlinks)
-    find "${APP_DIR}/venv/bin" \( -type f -o -type l \) -exec chmod 750 {} \;
-    # Compiled extensions and shared libraries
-    find "${APP_DIR}/venv" \( -name "*.so" -o -name "*.so.*" \) -exec chmod 750 {} \;
+    chmod -R o-rwx "${APP_DIR}/venv"
+    chmod -R g+rX  "${APP_DIR}/venv"
     ok "venv permissions set."
 
     # ── Backups / logs ───────────────────────────────────────────────────────
     chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}/backups"
     chmod 750 "${APP_DIR}/backups"
-
+    chown -R "${APP_USER}:${APP_USER}" "${APP_DIR}/logs" 2>/dev/null || true
     chown -R "${APP_USER}:adm" /var/log/mgtravel
     chmod 750 /var/log/mgtravel
 
